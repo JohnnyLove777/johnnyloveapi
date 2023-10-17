@@ -6,7 +6,7 @@
     "qrcode-terminal": "latest",
     "whatsapp-web.js": "github:Sansekai/whatsapp-web.js",
     "axios": "latest",
-    "readline": "latest"
+    "dotenv": "latest"
   },
   "devDependencies": {
     "pm2": "latest"

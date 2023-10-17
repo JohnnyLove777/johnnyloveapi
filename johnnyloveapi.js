@@ -2,11 +2,11 @@ const fs = require('fs');
 const axios = require('axios');
 const qrcode = require('qrcode-terminal');
 const { Client, Buttons, List, MessageMedia, LocalAuth } = require('whatsapp-web.js');
-const readline = require('readline');
+require('dotenv').config();
 
-let url = ''; //URL da api de chat Typebot
-let typebot = ''; //Nome do seu fluxo
-let DATABASE_FILE1 = ''; //Arquivo JSON para guardar os registros dos usuários
+const url = process.env.url; //URL da api de chat Typebot
+const typebot = process.env.typebot; //Nome do seu fluxo
+const DATABASE_FILE1 = process.env.database_file1; //Arquivo JSON para guardar os registros dos usuários
 
 // Configurações para o primeiro cliente (Windows)
 const client1 = new Client({
@@ -42,6 +42,24 @@ const client1 = new Client({
     ]
   }
 });*/
+
+console.log("Bem-vindo ao sistema de comandos do Johnny Love API 1.0 - A Integração Typebot + Whatsapp!");
+console.log(`URL do seu Typebot: ${url}`);
+console.log(`Fluxo carregado: ${typebot}`);
+console.log(`Arquivo JSON das sessões: ${DATABASE_FILE1}`);
+
+// entao habilitamos o usuario a acessar o serviço de leitura do qr code
+client1.on('qr', qr => {
+  qrcode.generate(qr, {small: true});
+});
+
+// apos isso ele diz que foi tudo certin
+client1.on('ready', () => {
+  console.log('Tudo certo! Johnny Love API pronta e conectada.');
+});
+
+// E inicializa tudo para fazer a nossa magica =)
+client1.initialize();
 
 //Rotinas da gestão de dados
 
@@ -166,93 +184,6 @@ async function tratarMidia(message) {
       console.error(e);
     }  
 }
-
-//Fim da rotinas de Gestão Typebot
-
-const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
-});
-
-// Função para gerar QR Code e aguardar autenticação
-function gerarQRCode(client) {
-    client.on('qr', (qr) => {
-        console.log('Escaneie o código QR com seu WhatsApp para autenticar.');
-        qrcode.generate(qr, { small: true });
-    });
-}
-
-// Função para solicitar informações do usuário via console
-function promptForInfo(prompt, callback) {
-    rl.question(prompt, (answer) => {
-      callback(answer);
-    });
-  }
-
-// Função para deslogar uma sessão
-async function logoutSession(sessionToLogout) {
-    const index = activeSessions.indexOf(sessionToLogout);
-    if (index !== -1) {
-      // Deslogar a sessão
-      try {
-        if(sessionToLogout == 'client-one'){
-        await client1.logout();}        i
-        console.log(`Sessão '${sessionToLogout}' deslogada com sucesso.`);
-      } catch (error) {
-        console.error(`Erro ao deslogar a sessão '${sessionToLogout}': ${error.message}`);
-      }
-  
-      // Remover a sessão da lista de sessões ativas
-      activeSessions.splice(index, 1);  
-     
-    } else {
-      console.log(`Sessão '${sessionToLogout}' não conhecida.`);
-    }
-  }
-
-// Função para sair do programa e retornar ao console do sistema operacional
-function exitProgram() {
-    console.log("Encerrando o programa. Até logo!");
-    process.exit();
-  }
-
-console.log("Bem-vindo ao sistema de comandos do Johnny Love API 1.0 - A Integração Typebot + Whatsapp!");
-console.log("Para adicionar um fluxo, digite: adicionar");
-console.log("Para deslogar a sessão, digite: deslogar");
-console.log("Para sair do programa, digite: sair");
-
-// Listener para comandos do console
-rl.on('line', (input) => {
-    if (input.trim() === 'adicionar') {      
-        promptForInfo("Por favor, forneça o URL da API do seu Typebot: ", (newUrl) => {
-          url = newUrl;
-          promptForInfo("Por favor, forneça o nome do seu fluxo Typebot: ", (newTypebot) => {
-            typebot = newTypebot;
-            promptForInfo("Por favor, forneça o nome do seu arquivo JSON (final .json) para a sessão deste fluxo: ", (newDBFile) => {
-              DATABASE_FILE1 = newDBFile;
-    
-              console.log("Obrigado por compartilhar essas informações. Agora vou gerar o QR code.");
-              gerarQRCode(client1);
-            });
-          });
-        });            
-    } else if (input.trim() === 'deslogar') {
-      promptForInfo("Por favor, forneça o nome da sessão que deseja deslogar: ", (sessionToLogout) => {
-      logoutSession(sessionToLogout);
-      });
-    } else if (input.trim() === 'sair') {
-      exitProgram();
-    } else {
-      console.log("Comando inválido. Digite 'adicionar' para criar um novo fluxo, 'listar' para listar sessões ativas, 'deslogar' para deslogar uma sessão, 'sair' para encerrar o programa.");
-    }
-  });
-
-// Evento quando o cliente está pronto
-client1.on('ready', () => {
-    console.log('Cliente 1 está pronto na sessão client-one');    
-});
-
-client1.initialize();
 
 // Evento de recebimento de mensagens
 client1.on('message', async msg => {
