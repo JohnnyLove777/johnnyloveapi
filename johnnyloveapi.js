@@ -227,8 +227,12 @@ client1.on('message', async msg => {
         formattedText = formattedText.replace(/\n$/, '');
         if(formattedText.startsWith('!wait')){
         await waitWithDelay(formattedText);
-        } 
-        if(!(formattedText.startsWith('!wait'))){          
+        }
+        if(formattedText.startsWith('!fim')){
+        if(existsDB1(msg.from)){
+        deleteObject1(msg.from);}
+        }
+        if(!(formattedText.startsWith('!wait')) && !(formattedText.startsWith('!fim'))){          
         await chat.sendStateTyping(); // Simulando Digitação
         await client1.sendMessage(msg.from, formattedText);
         }
