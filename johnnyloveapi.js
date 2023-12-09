@@ -4,9 +4,10 @@ const qrcode = require('qrcode-terminal');
 const { Client, Buttons, List, MessageMedia, LocalAuth } = require('whatsapp-web.js');
 require('dotenv').config();
 
-const url = process.env.url; //URL da api de chat Typebot
-const typebot = process.env.typebot; //Nome do seu fluxo
-const DATABASE_FILE1 = process.env.database_file1; //Arquivo JSON para guardar os registros dos usuários
+const url_registro = process.env.url_registro; //URL de registro da api de chat Typebot; Exemplo: https://typebot-seutype.vm.elestio.app/api/v1/typebots/seufunil/startChat
+const url_chat = process.env.url_chat; //URL de chat da api de chat Typebot; Exemplo: https://typebot-seutype.vm.elestio.app/api/v1/sessions/
+const DATABASE_FILE1 = process.env.database_file1; //Arquivo JSON para guardar os registros dos usuários; Exemplo: seubanco.json
+const gatilho = process.env.gatilho; //Gatilho para ativar o seu fluxo, escreva "null" caso queira um fluxo ativado com qualquer coisa
 
 // Configurações para o primeiro cliente (Windows)
 const client1 = new Client({
@@ -43,9 +44,9 @@ const client1 = new Client({
   }
 });*/
 
-console.log("Bem-vindo ao sistema de comandos do Johnny Love API 1.0 - A Integração Typebot + Whatsapp!");
-console.log(`URL do seu Typebot: ${url}`);
-console.log(`Fluxo carregado: ${typebot}`);
+console.log("Bem-vindo ao sistema Johnny Love API 1.1 - A Integração Typebot + Whatsapp!");
+console.log(`URL que inicia a sessão: ${url_registro}`);
+console.log(`URL que entrega o chat: ${url_chat}`);
 console.log(`Arquivo JSON das sessões: ${DATABASE_FILE1}`);
 
 // entao habilitamos o usuario a acessar o serviço de leitura do qr code
@@ -121,20 +122,36 @@ function readSessionId1(numeroId) {
   return objeto ? objeto.sessionid : undefined;
 }
 
-async function createSessionJohnny1(data){
+async function createSessionJohnny1(data) {
   const reqData = {
-    sessionId: data.from,
-    startParams: {
-      typebot: typebot,
-      prefilledVariables: {
-        number: data.from.split('@')[0],
-        name: data.notifyName
-      },
+    isStreamEnabled: true,    
+    isOnlyRegistering: true,
+    prefilledVariables: {
+      number: data.from.split('@')[0],
+      name: data.notifyName
     },
   };
-  const request = await axios.post(url, reqData);
-  if (!existsDB1(data.from)){
-    addObject1(data.from,request.data.sessionId,data.from.replace(/\D/g,''),100);   
+
+  const config = {
+    method: 'post',
+    maxBodyLength: Infinity,
+    url: url_registro, // Substitua "url" pela URL correta
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    data: JSON.stringify(reqData),
+  };
+
+  try {
+    const response = await axios.request(config);
+    //console.log(JSON.stringify(response.data));
+    
+    if (!existsDB1(data.from)) {
+      addObject1(data.from, response.data.sessionId, data.from.replace(/\D/g, ''), 100);
+    }
+  } catch (error) {
+    console.log(error);
   }
 }
 
@@ -188,53 +205,81 @@ async function tratarMidia(message) {
 // Evento de recebimento de mensagens
 client1.on('message', async msg => {
 
-  if (!existsDB1(msg.from) && msg.from.endsWith('@c.us') && !msg.hasMedia && msg.body === 'ATIVAR FUNIL BASICO'){
+  if(gatilho !== "null"){
+  if (!existsDB1(msg.from) && msg.from.endsWith('@c.us') && !msg.hasMedia && msg.body === gatilho){
     await createSessionJohnny1(msg);
+   }
+  } else {
+  if (!existsDB1(msg.from) && msg.from.endsWith('@c.us') && !msg.hasMedia && msg.body !== null){
+    await createSessionJohnny1(msg);
+   }
   }
 
   if (existsDB1(msg.from) && msg.from.endsWith('@c.us') && !msg.hasMedia){
-    const chat = await msg.getChat();
-    const sessionId = readSessionId1(msg.from);
-    const content = msg.body;
-    const reqData = {
-        message: content,
-        sessionId: sessionId,
-    };
-    const request = await axios.post(url, reqData);
-    const messages = request.data.messages;
+  const chat = await msg.getChat();
+  const sessionId = readSessionId1(msg.from);
+  const content = msg.body;
+  const chaturl = `${url_chat}${sessionId}/continueChat`;
+  
+  const reqData = {
+    message: content,
+  };
+
+  const config = {
+    method: 'post',
+    maxBodyLength: Infinity,
+    url: chaturl,
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    data: JSON.stringify(reqData),
+  };
+
+  try {
+    const response = await axios.request(config);
+    //console.log(JSON.stringify(response.data));
+    const messages = response.data.messages;    
     for (const message of messages){
       if (message.type === 'text') {
         let formattedText = '';
-        for (const richText of message.content.richText){
-          for (const element of richText.children){
+        for (const richText of message.content.richText) {
+          for (const element of richText.children) {
             let text = '';
+    
             if (element.text) {
-                text = element.text;
+              text = element.text;
+            } else if (element.type === 'inline-variable') {              
+              text = element.children[0].children[0].text;
             }
+    
             if (element.bold) {
-                text = `*${text}*`;
+              text = `*${text}*`;
             }
             if (element.italic) {
-                text = `_${text}_`;
+              text = `_${text}_`;
             }
             if (element.underline) {
-                text = `~${text}~`;
+              text = `~${text}~`;
             }
+    
             formattedText += text;
           }
           formattedText += '\n';
         }
+    
         formattedText = formattedText.replace(/\n$/, '');
-        if(formattedText.startsWith('!wait')){
-        await waitWithDelay(formattedText);
+        if (formattedText.startsWith('!wait')) {
+          await waitWithDelay(formattedText);
         }
-        if(formattedText.startsWith('!fim')){
-        if(existsDB1(msg.from)){
-        deleteObject1(msg.from);}
+        if (formattedText.startsWith('!fim')) {
+          if (existsDB1(msg.from)) {
+            deleteObject1(msg.from);
+          }
         }
-        if(!(formattedText.startsWith('!wait')) && !(formattedText.startsWith('!fim'))){          
-        await chat.sendStateTyping(); // Simulando Digitação
-        await client1.sendMessage(msg.from, formattedText);
+        if (!(formattedText.startsWith('!wait')) && !(formattedText.startsWith('!fim'))) {
+          await chat.sendStateTyping(); // Simulando Digitação
+          await client1.sendMessage(msg.from, formattedText);
         }
       }
       if (message.type === 'image' || message.type === 'video') {
@@ -251,6 +296,10 @@ client1.on('message', async msg => {
         }catch(e){}
       }
     }
+  } catch (error) {
+    console.log(error);
+  }
+  
   }  
 });
 
@@ -351,7 +400,7 @@ client1.on('message_create', async (msg) => {
 
   //Instruções da Central de Controle
   if (msg.fromMe && msg.body.startsWith('!help') && msg.to === msg.from) {    
-    await client1.sendMessage(msg.from, `*Sistema de Controle v1.0*\n\n*Atendimento Humano*\nMétodo Direto: "Ativar humano"\nMétodo Indireto: "!humano xxyyyyyyyyy"`);
+    await client1.sendMessage(msg.from, `*Sistema de Controle v1.1*\n\n*Atendimento Humano*\nMétodo Direto: "Ativar humano"\nMétodo Indireto: "!humano xxyyyyyyyyy"`);
   }
 
   //Deletar um contato da Base de Dados (Atendimento Humano)
