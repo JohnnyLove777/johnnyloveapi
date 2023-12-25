@@ -4,14 +4,78 @@ const qrcode = require('qrcode-terminal');
 const { Client, Buttons, List, MessageMedia, LocalAuth } = require('whatsapp-web.js');
 require('dotenv').config();
 
+//Rotinas da Gestão brokerMaster
+
+const { exec } = require('child_process');
+
+function isClientActive(client) {
+  return client && client.info;
+}
+
+function restartClient() {
+  return new Promise((resolve, reject) => {
+    exec(`pm2 restart ${sessao}`, (error) => {
+      if (error) {
+        console.error(`Erro ao reiniciar o cliente: ${error}`);
+        return reject(error);
+      }
+      console.log('Cliente reiniciado com sucesso.');
+      resolve();
+    });
+  });
+}
+
+function brokerMaster(requestFunction, client, ...args) {
+  const backoffDelay = 1000;
+  const maxRetries = 10;
+
+  return new Promise((resolve, reject) => {
+    const makeRequest = async (retryCount) => {
+      try {
+        if (!isClientActive(client)) {
+          console.log('Detectada inatividade do cliente. Tentando reiniciar...');
+          await restartClient();
+        }
+
+        const response = await requestFunction(...args);
+        resolve(response);
+      } catch (error) {
+        if (retryCount === maxRetries) {
+          console.log('Número máximo de tentativas atingido. Abortando...');
+          reject(error);
+          return;
+        }
+
+        console.log(`Tentativa ${retryCount + 1} falhou. Tentando novamente em ${backoffDelay * Math.pow(2, retryCount)}ms...`);
+        setTimeout(() => makeRequest(retryCount + 1), backoffDelay * Math.pow(2, retryCount));
+      }
+    };
+
+    makeRequest(0);
+  });
+}
+
+function sendMessageRetry(client, message, recipient, options = null) {
+  return brokerMaster(() => {
+    if (options) {
+      return client.sendMessage(recipient, message, options);
+    } else {
+      return client.sendMessage(recipient, message);
+    }
+  }, client);
+}
+
+//Fim da rotinas
+
 const url_registro = process.env.url_registro; //URL de registro da api de chat Typebot; Exemplo: https://typebot-seutype.vm.elestio.app/api/v1/typebots/seufunil/startChat
 const url_chat = process.env.url_chat; //URL de chat da api de chat Typebot; Exemplo: https://typebot-seutype.vm.elestio.app/api/v1/sessions/
 const DATABASE_FILE1 = process.env.database_file1; //Arquivo JSON para guardar os registros dos usuários; Exemplo: seubanco.json
 const gatilho = process.env.gatilho; //Gatilho para ativar o seu fluxo, escreva "null" caso queira um fluxo ativado com qualquer coisa
+const sessao = "typeListener";
 
 // Configurações para o primeiro cliente (Windows)
 const client1 = new Client({
-  authStrategy: new LocalAuth({ clientId: "client-one" }),
+  authStrategy: new LocalAuth({ clientId: sessao }),
   puppeteer: {
     executablePath: 'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
   }
@@ -19,7 +83,7 @@ const client1 = new Client({
 
 //Kit com os comandos otimizados para nuvem Ubuntu Linux (créditos Pedrinho da Nasa Comunidade ZDG)
 /*const client1 = new Client({
-  authStrategy: new LocalAuth({ clientId: "client-one" }),
+  authStrategy: new LocalAuth({ clientId: sessao }),
   puppeteer: {
     headless: true,
     //CAMINHO DO CHROME PARA WINDOWS (REMOVER O COMENTÁRIO ABAIXO)
@@ -44,10 +108,11 @@ const client1 = new Client({
   }
 });*/
 
-console.log("Bem-vindo ao sistema Johnny Love API 1.1 - A Integração Typebot + Whatsapp!");
+console.log("Bem-vindo ao sistema Johnny Love API 1.2 - A Integração Typebot + Whatsapp!");
 console.log(`URL que inicia a sessão: ${url_registro}`);
 console.log(`URL que entrega o chat: ${url_chat}`);
 console.log(`Arquivo JSON das sessões: ${DATABASE_FILE1}`);
+console.log(`Nome da sessão: ${sessao}`);
 
 // entao habilitamos o usuario a acessar o serviço de leitura do qr code
 client1.on('qr', qr => {
@@ -80,7 +145,7 @@ function writeJSONFile(nomeArquivo, dados) {
 
 //Gestão de dados sessão one 1
 
-function addObject1(numeroId, sessionid, numero, maxObjects) {
+function addObject1(numeroId, sessionid, numero, id, interact, maxObjects) {
   const dadosAtuais = readJSONFile(DATABASE_FILE1);
 
   // Verificar a unicidade do numeroId
@@ -89,7 +154,7 @@ function addObject1(numeroId, sessionid, numero, maxObjects) {
     throw new Error('O numeroId já existe no banco de dados.');
   }
 
-  const objeto = { numeroId, sessionid, numero};
+  const objeto = { numeroId, sessionid, numero, id, interact};
 
   if (dadosAtuais.length >= maxObjects) {
     // Excluir o objeto mais antigo
@@ -122,33 +187,110 @@ function readSessionId1(numeroId) {
   return objeto ? objeto.sessionid : undefined;
 }
 
-async function createSessionJohnny1(data) {
-  const reqData = {
-    isStreamEnabled: true,    
-    isOnlyRegistering: true,
+function updateId(numeroId, id) {
+  const dadosAtuais = readJSONFile(DATABASE_FILE1);
+  const objeto = dadosAtuais.find(obj => obj.numeroId === numeroId);
+  if (objeto) {
+    objeto.id = id;
+    writeJSONFile(DATABASE_FILE1, dadosAtuais);
+  }
+}  
+
+function readId(numeroId) {
+  const objeto = readMap1(numeroId);
+  return objeto ? objeto.id : undefined;
+}
+
+function updateInteract(numeroId, interact) {
+  const dadosAtuais = readJSONFile(DATABASE_FILE1);
+  const objeto = dadosAtuais.find(obj => obj.numeroId === numeroId);
+  if (objeto) {
+    objeto.interact = interact;
+    writeJSONFile(DATABASE_FILE1, dadosAtuais);
+  }
+}
+
+function readInteract(numeroId) {
+  const objeto = readMap1(numeroId);
+  return objeto ? objeto.interact : undefined;
+}
+
+async function createSessionJohnny1(data, client1) {
+  const chat = await data.getChat();
+
+  const reqData = JSON.stringify({
+    isStreamEnabled: true,
+    message: "string", // Substitua se necessário
+    resultId: "string", // Substitua se necessário
+    isOnlyRegistering: false,
     prefilledVariables: {
       number: data.from.split('@')[0],
       name: data.notifyName
     },
-  };
+  });
 
   const config = {
     method: 'post',
     maxBodyLength: Infinity,
-    url: url_registro, // Substitua "url" pela URL correta
+    url: url_registro,
     headers: {
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     },
-    data: JSON.stringify(reqData),
+    data: reqData
   };
 
   try {
     const response = await axios.request(config);
-    //console.log(JSON.stringify(response.data));
-    
+
+    const messages = response.data.messages;
+    for (const message of messages) {
+      if (message.type === 'text') {
+        let formattedText = '';
+        for (const richText of message.content.richText) {
+          for (const element of richText.children) {
+            let text = element.text || '';
+
+            if (element.bold) {
+              text = `*${text}*`;
+            }
+            if (element.italic) {
+              text = `_${text}_`;
+            }
+            if (element.underline) {
+              text = `~${text}~`;
+            }
+
+            formattedText += text;
+          }
+          formattedText += '\n';
+        }
+
+        formattedText = formattedText.replace(/\n$/, '');
+        if (formattedText.startsWith('!wait')) {
+          await waitWithDelay(formattedText);
+        } else if (formattedText.startsWith('!fim')) {
+          if (existsDB1(data.from)) {
+            deleteObject1(data.from);
+          }
+        } else {
+          await chat.sendStateTyping(); // Simulando digitação
+          await sendMessageRetry(client1, formattedText, data.from);
+        }
+      } else if (message.type === 'image' || message.type === 'video' || message.type === 'audio') {
+        try {
+          const media = await tratarMidia(message);
+          if (message.type === 'audio') {
+            await chat.sendStateRecording(); // Simulando áudio gravando
+          }
+          await sendMessageRetry(client1, media, data.from, message.type === 'audio' ? {sendAudioAsVoice: true} : {});
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }
     if (!existsDB1(data.from)) {
-      addObject1(data.from, response.data.sessionId, data.from.replace(/\D/g, ''), 100);
+      addObject1(data.from, response.data.sessionId, data.from.replace(/\D/g, ''), JSON.stringify(data.id.id), 'done', 400);
     }
   } catch (error) {
     console.log(error);
@@ -206,16 +348,20 @@ async function tratarMidia(message) {
 client1.on('message', async msg => {
 
   if(gatilho !== "null"){
-  if (!existsDB1(msg.from) && msg.from.endsWith('@c.us') && !msg.hasMedia && msg.body === gatilho){
-    await createSessionJohnny1(msg);
-   }
-  } else {
-  if (!existsDB1(msg.from) && msg.from.endsWith('@c.us') && !msg.hasMedia && msg.body !== null){
-    await createSessionJohnny1(msg);
-   }
-  }
+    if (!existsDB1(msg.from) && msg.from.endsWith('@c.us') && !msg.hasMedia && msg.body === gatilho){
+      //send messages
+      await createSessionJohnny1(msg, client1);
+     }
+    } else {
+    if (!existsDB1(msg.from) && msg.from.endsWith('@c.us') && !msg.hasMedia && msg.body !== null){
+      //send messages
+      await createSessionJohnny1(msg, client1);
+     }
+    }
 
-  if (existsDB1(msg.from) && msg.from.endsWith('@c.us') && !msg.hasMedia){
+if ((existsDB1(msg.from) && msg.from.endsWith('@c.us') && readInteract(msg.from) === 'done' && readId(msg.from) !== JSON.stringify(msg.id.id) && !msg.hasMedia && msg.body !== null)){  
+  updateInteract(msg.from, 'typing');
+  updateId(msg.from, JSON.stringify(msg.id.id));   
   const chat = await msg.getChat();
   const sessionId = readSessionId1(msg.from);
   const content = msg.body;
@@ -279,23 +425,27 @@ client1.on('message', async msg => {
         }
         if (!(formattedText.startsWith('!wait')) && !(formattedText.startsWith('!fim'))) {
           await chat.sendStateTyping(); // Simulando Digitação
-          await client1.sendMessage(msg.from, formattedText);
+          //await client1.sendMessage(msg.from, formattedText);
+          await sendMessageRetry(client1, formattedText, msg.from);
         }
       }
       if (message.type === 'image' || message.type === 'video') {
         try{
           const media = await tratarMidia(message);
-          await client1.sendMessage(msg.from, media);
+          //await client1.sendMessage(msg.from, media);
+          await sendMessageRetry(client1, media, msg.from);
         }catch(e){}
       }
       if (message.type === 'audio') {
         try{
           const media = await tratarMidia(message);
           await chat.sendStateRecording(); //Simulando audio gravando
-          await client1.sendMessage(msg.from, media, {sendAudioAsVoice: true});
+          //await client1.sendMessage(msg.from, media, {sendAudioAsVoice: true});
+          await sendMessageRetry(client1, media, msg.from, {sendAudioAsVoice: true});
         }catch(e){}
       }
     }
+    updateInteract(msg.from, 'done');
   } catch (error) {
     console.log(error);
   }

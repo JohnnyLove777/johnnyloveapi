@@ -1,12 +1,15 @@
 {
   "name": "johnnyloveapi",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Johnny Love API Projetada pelo Johnny Love - Uso livre para projetos comerciais, uso condicional para infoprodutos com temática igual ou semelhante ao treinamento Chatbot (entrar em contato)",
   "dependencies": {    
     "qrcode-terminal": "latest",
     "whatsapp-web.js": "github:Sansekai/whatsapp-web.js",
     "axios": "latest",
-    "dotenv": "latest"
+    "dotenv": "latest",
+    "express": "latest",
+    "body-parser": "latest",
+    "node-fetch": "^2.6.1"
   },
   "devDependencies": {
     "pm2": "latest"
@@ -16,4 +19,5 @@
     "start": "node johnnyloveapi.js"   
   }
 }
+
 
